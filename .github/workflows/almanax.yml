@@ -4,7 +4,16 @@ on:
   schedule:
     # Le 25 de chaque mois à 16:00 UTC (18h en été, 17h en hiver à Paris)
     - cron: "0 16 25 * *"
-  workflow_dispatch:   # bouton "Run workflow" pour tester à la main
+  workflow_dispatch:   # bouton "Run workflow" pour lancer à la main
+    inputs:
+      date_debut:
+        description: "Date de début (AAAA-MM-JJ). Vide = mois suivant complet"
+        required: false
+        default: ""
+      date_fin:
+        description: "Date de fin (AAAA-MM-JJ). Vide = fin du mois de la date de début"
+        required: false
+        default: ""
 
 jobs:
   envoyer:
@@ -17,4 +26,6 @@ jobs:
       - name: Envoyer la liste sur Discord
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
-        run: python almanax_discord.py
+          DATE_DEBUT: ${{ inputs.date_debut }}
+          DATE_FIN: ${{ inputs.date_fin }}
+        run: python almanax_discord.py $DATE_DEBUT $DATE_FIN
