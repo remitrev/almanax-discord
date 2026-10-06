@@ -1,0 +1,20 @@
+name: Almanax du mois suivant
+
+on:
+  schedule:
+    # Le 25 de chaque mois à 16:00 UTC (18h en été, 17h en hiver à Paris)
+    - cron: "0 16 25 * *"
+  workflow_dispatch:   # bouton "Run workflow" pour tester à la main
+
+jobs:
+  envoyer:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Envoyer la liste sur Discord
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: python almanax_discord.py
