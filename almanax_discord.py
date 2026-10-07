@@ -38,6 +38,18 @@ MOIS_FR = ["", "janvier", "février", "mars", "avril", "mai", "juin", "juillet",
 HEADERS = {"User-Agent": "almanax-discord-script/1.1"}
 LIMITE_EMBED = 4000         # Discord : 4096 caractères max par description
 
+# Logo affiché devant chaque objet selon son type (champ "subtype" de l'API)
+LOGOS = {
+    "resources": ("🌿", "ressource"),
+    "equipment": ("⚔️", "équipement"),
+    "consumables": ("🧪", "consommable"),
+}
+LOGO_INCONNU = ("❔", "autre")
+
+
+def logo(subtype):
+    return LOGOS.get(subtype, LOGO_INCONNU)[0]
+
 
 def fin_de_mois(d):
     return d.replace(day=calendar.monthrange(d.year, d.month)[1])
@@ -108,17 +120,17 @@ def construire_embeds(debut, fin, jours, items):
 
     entete = (f"Quantités : {persos}\n"
               f"{len(items)} objets différents sur {len(jours)} jours.\n"
-              f"Kamas gagnés (1 perso) : **{kamas:,}**\n".replace(",", " "))
+              f"Kamas gagnés (1 perso) : **{kamas:,}**\n".replace(",", " ")
+              + "Légende : " + " · ".join(f"{e} {t}" for e, t in LOGOS.values()) + "\n")
 
-    # Une entrée par ressource : quantités puis nom dans un bloc copiable
+    # Une entrée par objet : logo + quantités, puis nom dans un bloc copiable
     morceaux = [entete]
     for nom, it in sorted(items.items(), key=lambda kv: kv[0].lower()):
         qtes = " / ".join(f"**{it['qte'] * n}**" for n in NB_PERSOS)
-        equip = " 🛡️ équipement" if it["type"] == "equipment" else ""
-        morceaux.append(f"{qtes}{equip}\n```\n{nom}\n```")
+        morceaux.append(f"{logo(it['type'])} {qtes}\n```\n{nom}\n```")
 
-    detail = [f"`{j['date'][8:10]}/{j['date'][5:7]}` {j['tribute']['item']['name']} "
-              f"×{j['tribute']['quantity']}" for j in jours]
+    detail = [f"`{j['date'][8:10]}/{j['date'][5:7]}` {logo(j['tribute']['item'].get('subtype', ''))} "
+              f"{j['tribute']['item']['name']} ×{j['tribute']['quantity']}" for j in jours]
 
     embeds = []
     for i, bloc in enumerate(regrouper_en_blocs(morceaux, LIMITE_EMBED)):
