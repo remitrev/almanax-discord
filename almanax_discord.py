@@ -28,6 +28,7 @@ from datetime import date, timedelta
 # Sur GitHub : secret DISCORD_WEBHOOK_URL. En local : variable d'env ou colle l'URL ici.
 WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL", "")
 NB_PERSOS = [1, 4]          # quantités affichées
+CHECKLIST = True            # ajoute des sondages à cocher pour suivre les achats
 LANG = "fr"
 GAME = "dofus3"             # "dofus3" (Unity) ou "dofus2"
 # ======================================================
@@ -146,14 +147,51 @@ def construire_embeds(debut, fin, jours, items):
     return embeds
 
 
-def envoyer(embeds):
+def construire_checklists(fin, items):
+    """
+    Un webhook ne peut pas envoyer de boutons, mais il peut envoyer des sondages.
+    Sondage à choix multiples = checklist : on « vote » pour cocher, on retire
+    son vote pour décocher. Limites Discord : 10 réponses de 55 caractères max,
+    durée max 32 jours.
+    """
+    # Le sondage reste ouvert jusqu'au lendemain de la date de fin (max 768 h)
+    heures = int((fin + timedelta(days=1) - date.today()).total_seconds() // 3600)
+    heures = max(24, min(768, heures))
+
+    reponses = []
+    for nom, it in sorted(items.items(), key=lambda kv: kv[0].lower()):
+        qtes = "/".join(str(it["qte"] * n) for n in NB_PERSOS)
+        suffixe = f" ×{qtes}"
+        texte = nom[:55 - len(suffixe)].rstrip() + suffixe
+        reponses.append({"poll_media": {"text": texte, "emoji": {"name": logo(it["type"])}}})
+
+    paquets = [reponses[i:i + 10] for i in range(0, len(reponses), 10)]
+    sondages = []
+    for i, paquet in enumerate(paquets, 1):
+        num = f" ({i}/{len(paquets)})" if len(paquets) > 1 else ""
+        sondages.append({
+            "question": {"text": f"✅ Achats Almanax{num} — coche ce que tu as acheté"},
+            "answers": paquet,
+            "duration": heures,
+            "allow_multiselect": True,
+        })
+    return sondages
+
+
+def poster(payload):
+    data = json.dumps({"username": "Almanax", **payload}).encode()
+    req = urllib.request.Request(
+        WEBHOOK_URL, data=data,
+        headers={**HEADERS, "Content-Type": "application/json"}, method="POST")
+    urllib.request.urlopen(req, timeout=30).close()
+
+
+def envoyer(embeds, sondages):
     # Discord : 6000 caractères max par message -> un message par embed
     for e in embeds:
-        data = json.dumps({"username": "Almanax", "embeds": [e]}).encode()
-        req = urllib.request.Request(
-            WEBHOOK_URL, data=data,
-            headers={**HEADERS, "Content-Type": "application/json"}, method="POST")
-        urllib.request.urlopen(req, timeout=30).close()
+        poster({"embeds": [e]})
+    for s in sondages:
+        poster({"poll": s})
 
 
 def main():
@@ -162,14 +200,19 @@ def main():
     jours = fetch_almanax(debut, fin)
     items = regrouper(jours)
     embeds = construire_embeds(debut, fin, jours, items)
+    sondages = construire_checklists(fin, items) if CHECKLIST else []
 
     if "--dry-run" in args:
         for e in embeds:
             print(f"\n=== {e.get('title', '')} ===\n{e['description']}")
+        for s in sondages:
+            print(f"\n=== {s['question']['text']} ({s['duration']} h) ===")
+            for r in s["answers"]:
+                print(f"[ ] {r['poll_media']['emoji']['name']} {r['poll_media']['text']}")
     else:
         if not WEBHOOK_URL:
             sys.exit("Erreur : DISCORD_WEBHOOK_URL n'est pas défini.")
-        envoyer(embeds)
+        envoyer(embeds, sondages)
         print(f"Envoyé : almanax du {debut} au {fin}, {len(items)} objets.")
 
 
