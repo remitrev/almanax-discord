@@ -66,7 +66,7 @@ ul { list-style: none; margin: 0; padding: 0; }
 .copy.ok { background: var(--done-bg); color: var(--done); border-color: var(--done); }
 .item.done { background: var(--done-bg); }
 .item.done .name label, .item.done .qty { text-decoration: line-through; color: var(--muted); }
-.hide-done .item.done { display: none; }
+.hide-done .item.done, .hide-done tr.done { display: none; }
 h2 { font: 700 22px var(--display); margin: 36px 0 10px; }
 .days { width: 100%; border-collapse: collapse; background: var(--surface); border-radius: 10px; overflow: hidden; }
 .days td { padding: 8px 12px; border-bottom: 1px solid var(--line); }
@@ -95,7 +95,7 @@ h2 { font: 700 22px var(--display); margin: 36px 0 10px; }
     </div>
     <div class="controls">
       <div class="seg" role="group" aria-label="Nombre de personnages" id="persos"></div>
-      <button class="btn" id="masquer" aria-pressed="false">Masquer achetés</button>
+      <button class="btn" id="masquer" aria-pressed="true">Masquer achetés</button>
       <button class="btn" id="reset">Tout décocher</button>
     </div>
   </div>
@@ -116,7 +116,7 @@ const LOGOS = D.logos;
 function lire() { try { return JSON.parse(localStorage.getItem(CLE)) || {}; } catch (e) { return {}; } }
 function ecrire(s) { try { localStorage.setItem(CLE, JSON.stringify(s)); } catch (e) {} }
 
-let etat = Object.assign({ coches: {}, persos: D.persos[D.persos.length - 1], masquer: false }, lire());
+let etat = Object.assign({ coches: {}, persos: D.persos[D.persos.length - 1], masquer: true }, lire());
 if (!D.persos.includes(etat.persos)) etat.persos = D.persos[D.persos.length - 1];
 
 document.getElementById("titre").textContent = D.titre;
@@ -212,7 +212,7 @@ function rendre() {
   document.getElementById("fill").style.width = (D.items.length ? 100 * fait / D.items.length : 0) + "%";
   persos.querySelectorAll("button").forEach(b => b.setAttribute("aria-pressed", String(+b.dataset.n === etat.persos)));
   masquer.setAttribute("aria-pressed", String(etat.masquer));
-  liste.classList.toggle("hide-done", etat.masquer);
+  document.body.classList.toggle("hide-done", etat.masquer);
 }
 rendre();
 </script>
