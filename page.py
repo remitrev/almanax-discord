@@ -50,11 +50,12 @@ header h1 { font: 700 clamp(26px, 5vw, 34px)/1.1 var(--display); margin: 0 0 6px
 button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .legend { color: var(--muted); font-size: 15px; margin: 14px 0 6px; }
 ul { list-style: none; margin: 0; padding: 0; }
-.item { display: grid; grid-template-columns: auto 40px minmax(0, 1fr) auto auto; align-items: center; gap: 12px;
+.item { display: grid; grid-template-columns: 40px minmax(0, 1fr) auto auto; align-items: center; gap: 12px;
         padding: 10px 12px; border-bottom: 1px solid var(--line); background: var(--surface); }
 .item:first-child { border-top-left-radius: 10px; border-top-right-radius: 10px; }
 .item:last-child { border-bottom: 0; border-bottom-left-radius: 10px; border-bottom-right-radius: 10px; }
-.item input { width: 22px; height: 22px; accent-color: var(--done); cursor: pointer; }
+.actions { display: flex; align-items: center; gap: 10px; }
+.item input { width: 26px; height: 26px; margin: 0; accent-color: var(--done); cursor: pointer; }
 .item img { width: 40px; height: 40px; object-fit: contain; }
 .name { min-width: 0; }
 .name label { font-weight: 700; cursor: pointer; overflow-wrap: anywhere; }
@@ -74,9 +75,9 @@ h2 { font: 700 22px var(--display); margin: 36px 0 10px; }
 .days tr.done td:last-child { text-decoration: line-through; color: var(--muted); }
 .empty { color: var(--muted); padding: 16px 0; }
 @media (max-width: 520px) {
-  .item { grid-template-columns: auto 32px minmax(0, 1fr) auto; }
+  .item { grid-template-columns: 32px minmax(0, 1fr) auto; }
   .item img { width: 32px; height: 32px; }
-  .copy { grid-column: 3 / 5; justify-self: start; }
+  .actions { grid-column: 2 / 4; justify-self: end; }
 }
 @media (prefers-reduced-motion: reduce) { .fill { transition: none; } }
 </style>
@@ -168,12 +169,14 @@ D.items.forEach((it, i) => {
   li.dataset.nom = it.nom;
   const id = "c" + i;
   li.innerHTML =
-    '<input type="checkbox" id="' + id + '">' +
     '<img alt="" loading="lazy">' +
     '<div class="name"><label for="' + id + '"></label><small></small></div>' +
     '<div class="qty"><span></span><small></small></div>' +
-    '<button class="copy" type="button">Copier</button>';
-  li.querySelector("img").src = it.icone || "";
+    '<div class="actions"><button class="copy" type="button">Copier</button>' +
+    '<input type="checkbox" id="' + id + '" aria-label="Acheté"></div>';
+  const img = li.querySelector("img");
+  img.addEventListener("error", () => { img.style.visibility = "hidden"; });
+  if (it.icone) img.src = it.icone; else img.style.visibility = "hidden";
   li.querySelector("label").textContent = it.nom;
   li.querySelector(".name small").textContent =
     LOGOS[it.type] ? LOGOS[it.type][0] + " " + LOGOS[it.type][1] : "❔ autre";
