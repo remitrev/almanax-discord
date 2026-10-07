@@ -2,8 +2,8 @@
 """
 Envoie sur un webhook Discord la liste des ressources à acheter
 pour faire l'Almanax sur une période (Dofus 3), pour 1 et 4 personnages.
-Chaque ressource est dans son propre bloc de code : sur Discord PC,
-l'icône de copie au survol copie le nom en un clic.
+Génère aussi une page web (docs/) avec, pour chaque objet, un bouton
+« Copier » et une case à cocher. Le message Discord contient le lien.
 
 Source des données : API dofusdu.de (gratuite, sans clé).
 Aucune dépendance externe : Python 3.8+ suffit.
@@ -14,6 +14,7 @@ Usage :
     python3 almanax_discord.py 2026-10-07 2026-10-31    # du 7 au 31 octobre
     python3 almanax_discord.py 2026-10-07               # du 7 à la fin du mois
     ... --dry-run                                        # affiche sans envoyer
+                                                         # (la page est quand même générée)
 """
 
 import json
@@ -24,11 +25,16 @@ import urllib.request
 from collections import OrderedDict
 from datetime import date, timedelta
 
+from page import generer_page
+
 # ======================= CONFIG =======================
 # Sur GitHub : secret DISCORD_WEBHOOK_URL. En local : variable d'env ou colle l'URL ici.
 WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL", "")
 NB_PERSOS = [1, 4]          # quantités affichées
-CHECKLIST = True            # ajoute des sondages à cocher pour suivre les achats
+# Adresse de la page web (GitHub Pages). Déduite automatiquement sur GitHub.
+_REPO = os.environ.get("GITHUB_REPOSITORY", "remitrev/almanax-discord")
+PAGE_BASE = os.environ.get("PAGE_BASE", f"https://{_REPO.split('/')[0]}.github.io/{_REPO.split('/')[1]}/")
+DOSSIER_PAGES = os.path.join(os.path.dirname(os.path.abspath(__file__)), "docs")
 LANG = "fr"
 GAME = "dofus3"             # "dofus3" (Unity) ou "dofus2"
 # ======================================================
@@ -85,7 +91,8 @@ def regrouper(jours):
     for j in jours:
         trib = j["tribute"]
         nom = trib["item"]["name"]
-        it = items.setdefault(nom, {"qte": 0, "type": trib["item"].get("subtype", "")})
+        it = items.setdefault(nom, {"qte": 0, "type": trib["item"].get("subtype", ""),
+                                    "icone": trib["item"].get("image_urls", {}).get("icon", "")})
         it["qte"] += trib["quantity"]
     return items
 
@@ -114,68 +121,45 @@ def regrouper_en_blocs(morceaux, limite):
     return blocs
 
 
-def construire_embeds(debut, fin, jours, items):
+def construire_embeds(debut, fin, jours, items, url_page):
     titre = f"📅 Almanax {libelle_periode(debut, fin)}"
     kamas = sum(j.get("reward_kamas", 0) for j in jours)
     persos = " / ".join(f"{n} perso{'s' if n > 1 else ''}" for n in NB_PERSOS)
 
-    entete = (f"Quantités : {persos}\n"
-              f"{len(items)} objets différents sur {len(jours)} jours.\n"
-              f"Kamas gagnés (1 perso) : **{kamas:,}**\n".replace(",", " ")
-              + "Légende : " + " · ".join(f"{e} {t}" for e, t in LOGOS.values()) + "\n")
+    entete = (f"### [👉 Ouvrir la liste à cocher]({url_page})\n"
+              f"Bouton copier + case à cocher pour chaque objet.\n\n"
+              f"{len(items)} objets sur {len(jours)} jours · "
+              f"{kamas:,} kamas gagnés par perso\n".replace(",", " ")
+              + "Quantités : " + persos + " · "
+              + " · ".join(f"{e} {t}" for e, t in LOGOS.values()) + "\n")
 
-    # Une entrée par objet : logo + quantités, puis nom dans un bloc copiable
     morceaux = [entete]
     for nom, it in sorted(items.items(), key=lambda kv: kv[0].lower()):
         qtes = " / ".join(f"**{it['qte'] * n}**" for n in NB_PERSOS)
-        morceaux.append(f"{logo(it['type'])} {qtes}\n```\n{nom}\n```")
-
-    detail = [f"`{j['date'][8:10]}/{j['date'][5:7]}` {logo(j['tribute']['item'].get('subtype', ''))} "
-              f"{j['tribute']['item']['name']} ×{j['tribute']['quantity']}" for j in jours]
+        morceaux.append(f"{logo(it['type'])} {nom} — {qtes}")
 
     embeds = []
     for i, bloc in enumerate(regrouper_en_blocs(morceaux, LIMITE_EMBED)):
         e = {"description": bloc, "color": 0xE8A33D}
         if i == 0:
             e["title"] = titre
-        embeds.append(e)
-    for i, bloc in enumerate(regrouper_en_blocs(detail, LIMITE_EMBED)):
-        e = {"description": bloc, "color": 0x5865F2}
-        if i == 0:
-            e["title"] = "Détail par jour"
+            e["url"] = url_page
         embeds.append(e)
     return embeds
 
 
-def construire_checklists(fin, items):
-    """
-    Un webhook ne peut pas envoyer de boutons, mais il peut envoyer des sondages.
-    Sondage à choix multiples = checklist : on « vote » pour cocher, on retire
-    son vote pour décocher. Limites Discord : 10 réponses de 55 caractères max,
-    durée max 32 jours.
-    """
-    # Le sondage reste ouvert jusqu'au lendemain de la date de fin (max 768 h)
-    heures = int((fin + timedelta(days=1) - date.today()).total_seconds() // 3600)
-    heures = max(24, min(768, heures))
-
-    reponses = []
-    for nom, it in sorted(items.items(), key=lambda kv: kv[0].lower()):
-        qtes = "/".join(str(it["qte"] * n) for n in NB_PERSOS)
-        suffixe = f" ×{qtes}"
-        texte = nom[:55 - len(suffixe)].rstrip() + suffixe
-        reponses.append({"poll_media": {"text": texte, "emoji": {"name": logo(it["type"])}}})
-
-    paquets = [reponses[i:i + 10] for i in range(0, len(reponses), 10)]
-    sondages = []
-    for i, paquet in enumerate(paquets, 1):
-        num = f" ({i}/{len(paquets)})" if len(paquets) > 1 else ""
-        sondages.append({
-            "question": {"text": f"✅ Achats Almanax{num} — coche ce que tu as acheté"},
-            "answers": paquet,
-            "duration": heures,
-            "allow_multiselect": True,
-        })
-    return sondages
+def ecrire_pages(debut, fin, jours, items):
+    """Écrit docs/<debut>_<fin>.html (lien permanent) et docs/index.html (dernière liste)."""
+    os.makedirs(DOSSIER_PAGES, exist_ok=True)
+    titre = f"Almanax {libelle_periode(debut, fin)}"
+    html = generer_page(titre, debut, fin, jours, items, NB_PERSOS, LOGOS)
+    nom = f"{debut.isoformat()}_{fin.isoformat()}.html"
+    for f in (nom, "index.html"):
+        with open(os.path.join(DOSSIER_PAGES, f), "w", encoding="utf-8") as fh:
+            fh.write(html)
+    # .nojekyll : GitHub Pages sert les fichiers tels quels
+    open(os.path.join(DOSSIER_PAGES, ".nojekyll"), "w").close()
+    return PAGE_BASE + nom
 
 
 def poster(payload):
@@ -186,12 +170,10 @@ def poster(payload):
     urllib.request.urlopen(req, timeout=30).close()
 
 
-def envoyer(embeds, sondages):
+def envoyer(embeds):
     # Discord : 6000 caractères max par message -> un message par embed
     for e in embeds:
         poster({"embeds": [e]})
-    for s in sondages:
-        poster({"poll": s})
 
 
 def main():
@@ -199,20 +181,17 @@ def main():
     debut, fin = periode(args)
     jours = fetch_almanax(debut, fin)
     items = regrouper(jours)
-    embeds = construire_embeds(debut, fin, jours, items)
-    sondages = construire_checklists(fin, items) if CHECKLIST else []
+    url_page = ecrire_pages(debut, fin, jours, items)
+    embeds = construire_embeds(debut, fin, jours, items, url_page)
 
     if "--dry-run" in args:
         for e in embeds:
             print(f"\n=== {e.get('title', '')} ===\n{e['description']}")
-        for s in sondages:
-            print(f"\n=== {s['question']['text']} ({s['duration']} h) ===")
-            for r in s["answers"]:
-                print(f"[ ] {r['poll_media']['emoji']['name']} {r['poll_media']['text']}")
+        print(f"\nPage : {url_page}")
     else:
         if not WEBHOOK_URL:
             sys.exit("Erreur : DISCORD_WEBHOOK_URL n'est pas défini.")
-        envoyer(embeds, sondages)
+        envoyer(embeds)
         print(f"Envoyé : almanax du {debut} au {fin}, {len(items)} objets.")
 
 

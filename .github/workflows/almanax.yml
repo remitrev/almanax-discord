@@ -15,6 +15,13 @@ on:
         required: false
         default: ""
 
+permissions:
+  contents: write      # pour enregistrer la page générée dans docs/
+
+concurrency:
+  group: almanax
+  cancel-in-progress: false
+
 jobs:
   envoyer:
     runs-on: ubuntu-latest
@@ -23,7 +30,32 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Envoyer la liste sur Discord
+
+      - name: Générer la page
+        env:
+          DATE_DEBUT: ${{ inputs.date_debut }}
+          DATE_FIN: ${{ inputs.date_fin }}
+        run: python almanax_discord.py $DATE_DEBUT $DATE_FIN --dry-run
+
+      - name: Publier la page (GitHub Pages lit le dossier docs/)
+        run: |
+          git config user.name "almanax-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs
+          if git diff --cached --quiet; then
+            echo "Page inchangée"
+          else
+            git commit -m "Page Almanax ${DATE_DEBUT:-mois suivant}"
+            git pull --rebase origin main
+            git push origin HEAD:main
+          fi
+        env:
+          DATE_DEBUT: ${{ inputs.date_debut }}
+
+      - name: Laisser GitHub Pages se mettre à jour
+        run: sleep 60
+
+      - name: Envoyer le message Discord
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
           DATE_DEBUT: ${{ inputs.date_debut }}
